@@ -41,7 +41,11 @@ local opts = {
   -- A function to return an entry given an entry produced
   -- by dir_command. Returns the entry directly by default.
   entry_value_fn = function(entry_value)
-    return '"' .. entry_value .. '"'
+    if vim.loop.os_uname().sysname == 'Windows_NT' then
+      return '"' .. entry_value:gsub("\\$", "") .. '"'
+    else
+      return '"' .. entry_value .. '"'
+    end
   end,
 
   -- The command used to page directory previews. Defaults to bat.
@@ -56,11 +60,17 @@ local opts = {
   --   display is what is actually displayed, so this can
   --     be a function that trims a path prefix for example.
   entry_maker = function(line)
+    local folder_icon = ' '
     return {
       value = line,
       display = function(entry)
-        return ' ' .. line:gsub(os.getenv('HOME') .. '/', ''),
-          { { { 1, 3 }, 'Directory' } }
+        if vim.loop.os_uname().sysname == 'Windows_NT' then
+          return folder_icon .. line:gsub(os.getenv('USERPROFILE') .. "\\", ''),
+            { { { 1, 3 }, 'Directory' } }
+        else
+          return folder_icon .. line:gsub(os.getenv('HOME') .. '/', ''),
+            { { { 1, 3 }, 'Directory' } }
+        end
       end,
       ordinal = line,
     }
@@ -77,6 +87,13 @@ local opts = {
     end,
   },
 }
+
+-- TODO: call after setup if OS is Windows series
+local function config_for_windows(o)
+  dir_command = { 'dir', '/B', '.', }
+  command_executer = { 'cmd.exe', '/c' }
+  previewer_command = 'dir /B'
+end
 
 local function setup(o)
   o = o or {}
@@ -95,23 +112,24 @@ local function mapping(prompt_bufnr, command)
   end
 end
 
-local function resolve_prompt_title(prompt_title)
-  local prompt_type = type(prompt_title)
-  if prompt_type == 'function' then
-    return prompt_title()
+local function resolve_given_param(param)
+  local param_type = type(param)
+  if param_type == 'function' then
+    return param()
   else
-    return prompt_title
+    return param
   end
 end
 
 local function run(o)
   o = o and vim.tbl_deep_extend('force', opts, o) or opts
-  o.prompt_title = resolve_prompt_title(o.prompt_title)
+  o.prompt_title = resolve_given_param(o.prompt_title)
   pickers
     .new(o, {
       prompt_title = o.prompt_title,
       finder = finders.new_oneshot_job(o.dir_command, o),
       previewer = previewers.new_termopen_previewer({
+
         get_command = function(entry)
           return vim.tbl_flatten({
             o.command_executer,
